@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: YFP Login Form Customizer
-Description: Add a box that must be filled in to login. The text to enter is given above the box.
+Description: Adds a box to the WordPress login form that must be properly filled in as part of the login process. The correct text to enter is displayed above the box, so humans can easily login, while robots are unlikely to know what to do.
 Version: 1.0
 Author: Paul Blakelock, Splendid Spider Web Design.
 */
@@ -51,7 +51,8 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 
 	// Additions for the admin interface.
 	const STR_PLUGIN_TITLE = 'YFP Login Form Customizer';
-	const STR_BROWSER_MENU_TEXT = 'YFP Login Form Customizer';
+    // The menu text in the settings menu, so keep it short.
+	const STR_SETTINGS_MENU_TEXT = 'YFP Login';
 
 	// The name of the key to use for all of this plugin's options.
 	const WP_OPTIONS_KEY_NAME = 'yfp_login_additions';
@@ -104,15 +105,16 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	/**
 	* Just so the key doesn't need to be remembered.
 	*/
-	protected function get_plugin_options() {
+	protected function get_options_from_db() {
+        // Returns false for no option found.
 		$options = get_option( self::WP_OPTIONS_KEY_NAME );
 		return $options;
 	}
 
 
 	/**
-	* Short term: copy the defaults.
-	* Later: get the values from wp_options() and use those.
+	* Set up defaults, then override them with any saved options found.
+    * This inializes all of the values that can be saved in the database.
 	*/
 	protected function initializeSavedSettings() {
 
@@ -121,10 +123,10 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		$this->label_before = self::DEF_LABEL_BEFORE;
 		$this->label_after = self::DEF_LABEL_AFTER;
 		$this->quote_answer = self::DEF_QUOTE_ANSWER;
-		// Use the saved options if they exist.
-		$options = $this->get_plugin_options();
-		if (is_array($options)) {
 
+		// Use the saved options if they exist.
+		$options = $this->get_options_from_db();
+		if (is_array($options)) {
 			if ($this->keyHasStringContent(self::WPO_KEY_ANSWER, $options)) {
 				$this->correct_answer = $options[self::WPO_KEY_ANSWER];
 			}
@@ -147,7 +149,8 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	function echo_field_to_form(){
 		$ans = $this->quote_answer ? '"' . $this->correct_answer . '"' : $this->correct_answer;
 		$labelText = sprintf('%s %s %s', $this->label_before, $ans, $this->label_after);
-	?><p>
+?>
+    <p>
 		<label for="<?php echo self::KEY_USER_RESPONSE; ?>"><?php echo $labelText; ?><br>
 		<input type="text" size="20" value="" class="input" id="<?php echo self::KEY_USER_RESPONSE; ?>" name="<?php echo self::KEY_USER_RESPONSE; ?>"></label>
 		<input type="hidden" name="<?php echo self::KEY_CORRECT_ANSWER; ?>" value="<?php echo $this->correct_answer; ?>" />
@@ -202,7 +205,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		// This function is a simple wrapper for a call to add_submenu_page().
 		add_options_page(
 			self::STR_PLUGIN_TITLE . ' Settings', // Title for the browser's title tag.
-			self::STR_BROWSER_MENU_TEXT, // Menu text, show under Settings.
+			self::STR_SETTINGS_MENU_TEXT, // Menu text, show under Settings.
 			'manage_options', // Which users can use this.
 			self::ADMIN_MENU_SLUG, // Menu slug
 			array( $this, 'cb_build_settings_page' )
@@ -215,7 +218,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	public function cb_build_settings_page() {
 		?>
 		<div class="wrap">
-			<h2><?php echo self::STR_PLUGIN_TITLE; ?> settings</h2>
+			<h2><?php echo self::STR_PLUGIN_TITLE; ?> Settings</h2>
 			<p>The defaults will work for most people, but any of the values can be
 			changed to different strings. Before and After text will be used in
 			the form's label around "the answer".</p>
@@ -239,7 +242,8 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
                 $secName, $pageSlug, 'All settings', array( $this, 'form_cb_section_1_html' ));
         $ss1->add_field('The answer', array( $this, 'form_cb_html_answer_input' ));
         $ss1->add_field('Wrap in quotes', array( $this, 'form_cb_html_quote_answer' ));
-        $ss1->add_field('Before the answer', array( $this, 'form_cb_html_before_input' ));
+        // It is possible to send information in an optional array.
+        $ss1->add_field('Before the answer', array( $this, 'form_cb_html_before_input' ), array('was_bad' => 'no', ));
         $ss1->add_field('After the answer', array( $this, 'form_cb_html_after_input' ));
     }
 
@@ -258,6 +262,18 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
         );
     }
 
+    /**
+    * Compare a value to the value found in the key of an array.
+    * It is considered changed if the is not found in the array.
+    *
+    * @param string $origKey
+    * @param array $origArr
+    * @param mixed $newValue
+    * @return bool
+    */
+    protected function isValueDifferent($origKey, $origArr, $newValue) {
+        return !array_key_exists($origKey, $origArr) || $origArr[$origKey] !== $newValue;
+    }
 
 	/**
 	 * Sanitize each setting field as needed. If a key does not get returned
@@ -265,6 +281,9 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	 * key, that means that values will return to the default. So code was
 	 * added to fix that: each value is sanitized every time.
 	 *
+     * This is not called before the form fields are displayed, and so cannot be used
+     * to modifiy any information in the form field text.
+     *
 	 * @param array $input - Contains all settings fields as array keys
 	 * @return array - The sanitized input array.
 	 */
@@ -272,18 +291,14 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 
 		$new_input = array();
 		// New installation or saving for the first time.
-		$current_options = $this->get_plugin_options();
-
-		if (!is_array($current_options)) {
-			// Will allow updating of everything because the keys will not exist.
-			$current_options = array();
-		}
+		$current_options = $this->get_options_from_db();
+        // Will allow updating of everything because the keys will not exist.
+		if (!is_array($current_options)) {$current_options = array();}
 
 		// Determines the type of message displayed, will be changed if there is an error.
 		$type = 'updated';
 		//$data = debug_options_arr($input);
-		$message = 'The input array: ' . print_r($input, true);
-		//$message .= 'pre update values: ' . debug_options_arr($this->options) . ' | ';
+        $message = '';
 
 		// Use this variable some more code can be copied, but it is somewhat unique, no not a method.
 		$check_key = self::WPO_KEY_ANSWER;
@@ -295,14 +310,13 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			if ( 0 !== $chars && 20 >= $chars ) {
 				$new_input[$check_key] = $val;
 				// Only update the message if the value has changed.
-				if ( !array_key_exists($check_key, $current_options) ||
-						$current_options[$check_key] !== $new_input[$check_key] ) {
-					$message .= __('Answer field updated. ');
+                if ($this->isValueDifferent($check_key, $current_options, $new_input[$check_key])) {
+					$message .= __('The response required for the correct answer was updated. ');
 				}
 			}
 			else {
 				$type = 'error';
-				$message .= __('The Answer field cannot be empty, must only be alphanumeric, and must be 20 or fewer characters. ');
+				$message .= __('The "answer" field cannot be empty, must only be alphanumeric, and must be 20 or fewer characters. ');
 				// This was initialized to a default if the value was not otherwise set.
 				$new_input[$check_key] = $this->correct_answer;
 			}
@@ -310,18 +324,11 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 
 		// Check the Quote inputs, it's a checkbox.
 		$check_key = self::WPO_KEY_QUOTE_ANSWER;
-		// Check the answer inputs
-		if( isset( $input[$check_key] ) ) {
-			$val = 1;
-		}
-		else {
-			$val = 0;
-		}
+        $val = isset( $input[$check_key] ) ? 1 : 0;
 		$new_input[$check_key] = $val;
-			// Only update the message if the value has changed.
-		if ( !array_key_exists($check_key, $current_options) ||
-				$current_options[$check_key] !== $new_input[$check_key] ) {
-			$message .= __('Add Quotes field updated. ');
+		// Only update the message if the value has changed.
+        if ($this->isValueDifferent($check_key, $current_options, $new_input[$check_key])) {
+			$message .= __('The "Add Quotes" field updated. ');
 		}
 
 		// Check the Before inputs
@@ -333,14 +340,13 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			if ( 100 >= $chars ) {
 				$new_input[$check_key] = $val;
 				// Only update the message if the value has changed.
-				if ( !array_key_exists($check_key, $current_options) ||
-						$current_options[$check_key] !== $new_input[$check_key] ) {
-					$message .= __('Before field updated. ');
+                if ($this->isValueDifferent($check_key, $current_options, $new_input[$check_key])) {
+					$message .= __('The "before" field updated. ');
 				}
 			}
 			else {
 				$type = 'error';
-				$message .= __('The Before field must be 100 or fewer characters. ');
+				$message .= __('The "before" field must be 100 or fewer characters. ');
 				// This was initialized to a default if the value was not otherwise set.
 				$new_input[$check_key] = $this->label_before;
 			}
@@ -355,20 +361,20 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			if ( 100 >= $chars ) {
 				$new_input[$check_key] = $val;
 				// Only update the message if the value has changed.
-				if ( !array_key_exists($check_key, $current_options) ||
-						$current_options[$check_key] !== $new_input[$check_key] ) {
-					$message .= __('After field updated. ');
+                if ($this->isValueDifferent($check_key, $current_options, $new_input[$check_key])) {
+					$message .= __('The "after" field was updated. ');
 				}
 			}
 			else {
 				$type = 'error';
-				$message .= __('The After field must be 100 or fewer characters. ');
+				$message .= __('The "zfter" field must be 100 or fewer characters. ');
 				// This was initialized to a default if the value was not otherwise set.
 				$new_input[$check_key] = $this->label_after;
 			}
 		}
 
-		$message .= '<br />The new input: ' . print_r($new_input, true);
+        //$message .= '<br />The input array: ' . print_r($input, true);
+		//$message .= '<br />The new input: ' . print_r($new_input, true);
 
 		//$message .= ' | debug: ' . debug_options_arr($new_input);
 		if ('' !== $message) {
@@ -388,19 +394,22 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	 */
 	public function form_cb_section_1_html() {
 
-		$tpl = 'Name: "%s" &mdash; Value: "%s"<br />';
-		$vars = array(
-			'answer' => $this->correct_answer,
-			'quote it' => $this->quote_answer,
-			'before' => $this->label_before,
-			'after' => $this->label_after,
-		);
-		_e('All setting for the plugin are on this page. Enter your settings below:');
-		echo 'Setting at form loading: <br />';
-		foreach ($vars as $varname => $val) {
-			printf($tpl, $varname, $val);
-		}
+		_e('All setting for the plugin are on this page. Enter any changes to the current values below:');
+        if (0) {
+            $tpl = 'Name: "%s" &mdash; Value: "%s"<br />';
+            $vars = array(
+                'answer' => $this->correct_answer,
+                'quote it' => $this->quote_answer,
+                'before' => $this->label_before,
+                'after' => $this->label_after,
+            );
+		    echo 'Setting at form loading: <br />';
+		    foreach ($vars as $varname => $val) {
+			    printf($tpl, $varname, $val);
+		    }
+        }
 	}
+
 
 	/**
 	* The options are array elements, so this makes the text that goes in the
@@ -425,13 +434,11 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
      * callback names were defined.
 	 */
 	public function form_cb_html_answer_input() {
-
-		$key = self::WPO_KEY_ANSWER;
 		// params are: id, name, value
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_ANSWER),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_ANSWER),
-			str_replace( '"', '&quot;', $this->correct_answer)
+			htmlspecialchars($this->correct_answer, ENT_HTML5)
 		);
 		echo '<br />This is the text that the user must enter to login. It must be alpha-numeric and be less than 20 characters. It will be displayd as part of the login screen.';
 	}
@@ -443,27 +450,29 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_QUOTE_ANSWER),
 			checked( 1, $this->quote_answer, false )
 		);
-		echo '<br />Wrap the Answer in quotes when it is shown on the login screen.';
+		echo '<br />The "answer" on the login screen will be wrapped in quotes if this box is checked.';
 	}
 
+    // It is possible to send information in an optional array.
 	public function form_cb_html_before_input($opt=array()) {
 		// params are: id, name, value
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
-			str_replace( '"', '&quot;', $this->label_before)
+			htmlspecialchars($this->label_before)
 		);
-		echo '<br />This text will be displayed immediately before "the answer".';
-		htmlspecialchars( print_r($opt) );
+		echo '<br />Optional. This text will be displayed immediately before "the answer".';
+		//htmlspecialchars( print_r($opt) );
 	}
+
 	public function form_cb_html_after_input() {
 		// params are: id, name, value
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
-			str_replace( '"', '&quot;', $this->label_after)
+            htmlspecialchars($this->label_after)
 		);
-		echo '<br />This text will be displayed immediately after "the answer".';
+		echo '<br />Optional. This text will be displayed immediately after "the answer".';
 	}
 
     protected function initializePluginSettings() {
