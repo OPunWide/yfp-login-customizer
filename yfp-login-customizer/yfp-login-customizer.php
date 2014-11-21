@@ -23,8 +23,17 @@ Author: Paul Blakelock, Splendid Spider Web Design.
 * Cannot use namespaces yet because at this time WP supports PHP version 5.2.4 or greater.
 */
 
-class Yfp_Login_Customizer
+if ( ! class_exists( 'Yfp_Plugin_Base' ) ) {
+    require_once(plugin_dir_path( __FILE__ ) . 'includes/Yfp_Plugin_Base.php');
+}
+if ( ! class_exists( 'Yfp_Plugin_Settings_Section' ) ) {
+    require_once(plugin_dir_path( __FILE__ ) . 'includes/Yfp_Plugin_Settings_Section.php');
+}
+
+class Yfp_Login_Customizer extends Yfp_Plugin_Base
 {
+    private static $instance = null;
+
 	// Called KEY because they will be POST keys.
 	const KEY_USER_RESPONSE = 'yfp-twice-the-answer';
 	const KEY_CORRECT_ANSWER = 'yfp-atoe';	// Answer to Everything.
@@ -33,6 +42,7 @@ class Yfp_Login_Customizer
 	const DEF_LABEL_AFTER = '';
 	const DEF_QUOTE_ANSWER = 0;
 
+    protected $pluginSettingsGroup;
 
 	protected $correct_answer;
 	protected $label_before;
@@ -104,7 +114,7 @@ class Yfp_Login_Customizer
 	* Short term: copy the defaults.
 	* Later: get the values from wp_options() and use those.
 	*/
-	protected function update_config_properties() {
+	protected function initializeSavedSettings() {
 
 		// Set the defaults.
 		$this->correct_answer = self::DEF_CORRECT_ANSWER;
@@ -174,39 +184,35 @@ class Yfp_Login_Customizer
 	/////////////////////////////////////////////////////
 	// The rest of this is admin interface and variable storage.
 	/////////////////////////////////////////////////////
-	protected function init_admin() {
-
-		if ($this->use_admin && is_admin() ) {
-			// Init some variables used in the setup.
-			//$this->options = get_option( self::WP_OPTIONS_KEY_NAME );
-			$this->settings_group_name = self::WP_OPTIONS_KEY_NAME;
-
-			// Add actions that are methods in theis class.
-			add_action( 'admin_menu', array( $this, 'add_plugin_page' ) );
-			add_action( 'admin_init', array( $this, 'register_settings' ) );
+	protected function initAdmin() {
+		if (is_admin() ) {
+            // Provide access to the setting page that will be created.
+            $this->hook('admin_menu', 'create_menu_link_to_settings_page');
+            $this->hook('admin_init', 'settings_api_init');
+            $this->addPluginSettingsLink();
 		}
 	}
 
 	/**
 	 * Add the options page to the Settings menu.
 	 */
-	public function add_plugin_page() {
+	public function create_menu_link_to_settings_page() {
 
 		// This page will be under "Settings"  in the admin area.
 		// This function is a simple wrapper for a call to add_submenu_page().
 		add_options_page(
-			'Settings Admin', // Title for the browser's title tag.
+			self::STR_PLUGIN_TITLE . ' Settings', // Title for the browser's title tag.
 			self::STR_BROWSER_MENU_TEXT, // Menu text, show under Settings.
 			'manage_options', // Which users can use this.
 			self::ADMIN_MENU_SLUG, // Menu slug
-			array( $this, 'create_admin_page' )
+			array( $this, 'cb_build_settings_page' )
 		);
 	}
 
 	/**
 	 * Options page callback, this creates the admin settings page content.
 	 */
-	public function create_admin_page() {
+	public function cb_build_settings_page() {
 		?>
 		<div class="wrap">
 			<h2><?php echo self::STR_PLUGIN_TITLE; ?> settings</h2>
@@ -216,78 +222,41 @@ class Yfp_Login_Customizer
 
 			<form method="post" action="options.php">
 			<?php
-				// The option group. This should match the group name used in register_setting().
-				settings_fields( $this->settings_group_name );
-				// This prints out all hidden setting fields for the page.
+				// The option group. This must match the group name used in register_setting().
+                // This prints out all hidden setting fields for the page.
+				settings_fields( $this->pluginSettingsGroup );
 				// This will output the section titles wrapped in h3 tags and the settings fields wrapped in tables.
 				do_settings_sections( self::ADMIN_MENU_SLUG );
 				submit_button();
-				// The key used matches the Option name in register_settings.
-				//print debug_options_arr($this->get_plugin_options());
 			?>
 			</form>
 		</div>
 		<?php
 	}
 
+    protected function addSettingsSection1($secName, $pageSlug) {
+        $ss1 = new Yfp_Plugin_Settings_Section(
+                $secName, $pageSlug, 'All settings', array( $this, 'form_cb_section_1_html' ));
+        $ss1->add_field('The answer', array( $this, 'form_cb_html_answer_input' ));
+        $ss1->add_field('Wrap in quotes', array( $this, 'form_cb_html_quote_answer' ));
+        $ss1->add_field('Before the answer', array( $this, 'form_cb_html_before_input' ));
+        $ss1->add_field('After the answer', array( $this, 'form_cb_html_after_input' ));
+    }
+
 	/**
 	 * Register and add settings.
 	 */
-	public function register_settings() {
+	public function settings_api_init() {
 
-		//Although much code shows doing this for a single value, it is recommended that all
-		// plugin setting are put in one array. This just saves the name and tells how to sanitize.
-		register_setting(
-			$this->settings_group_name, // Option group
-			self::WP_OPTIONS_KEY_NAME, // tTe option name being registerd, same as used in the get_option() call.
-			array( $this, 'sanitize_options' ) // Sanitize callback, used for all options
-		);
-
-		// There is only one section, so any ID will do.
-		add_settings_section(
-			'yfp_login_section_1', // ID
-			'All settings', // Title
-			array( $this, 'section_1_html' ), // Callback, provides the html for the section.
-			self::ADMIN_MENU_SLUG // Options page slug, used in do_settings_sections.
-		);
-
-		// Need a field for each option that can be changed. There output the html for each field.
-		add_settings_field(
-			//'answer_input', // ID
-			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_ANSWER),
-			'The answer', // Title, looks like the input label in this case.
-			array( $this, 'form_html_answer_input' ), // Callback to make the html for this field
-			self::ADMIN_MENU_SLUG, // Options page slug
-			'yfp_login_section_1' // Section for this field, which section this lives in.
-		);
-
-		add_settings_field(
-			// ID
-			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_QUOTE_ANSWER),
-			'Wrap in quotes',
-			array( $this, 'form_html_quote_answer' ),
-			self::ADMIN_MENU_SLUG, // Options page slug
-			'yfp_login_section_1' // Section for this field
-		);
-
-		add_settings_field(
-			// ID
-			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
-			'Before the answer',
-			array( $this, 'form_html_before_input' ),
-			self::ADMIN_MENU_SLUG, // Options page slug
-			'yfp_login_section_1' // Section for this field
-		);
-
-		add_settings_field(
-			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
-			'After the answer',
-			array( $this, 'form_html_after_input' ),
-			self::ADMIN_MENU_SLUG, // Options page slug
-			'yfp_login_section_1' // Section for this field
-		);
-
-}
+        // Attach a page and settings group to a group of settings fields.
+        $this->addSettingsSection1('somethingunique', self::ADMIN_MENU_SLUG);
+        // Tie the wp_otions key to the settings group.
+        register_setting(
+            $this->pluginSettingsGroup, // Option group
+            self::WP_OPTIONS_KEY_NAME, // tTe option name being registerd, same as used in the get_option() call.
+            array( $this, 'sanitize_options' ) // Sanitize callback, used for all options
+        );
+    }
 
 
 	/**
@@ -417,7 +386,7 @@ class Yfp_Login_Customizer
 	/**
 	 * Print the Section html
 	 */
-	public function section_1_html() {
+	public function form_cb_section_1_html() {
 
 		$tpl = 'Name: "%s" &mdash; Value: "%s"<br />';
 		$vars = array(
@@ -450,11 +419,12 @@ class Yfp_Login_Customizer
 
 	/**
 	 * Get the settings option array and print one of its values
-	 * This echoes and input element with name and id.
-	 * It is unclear when this is called (the state of the options array.) I'm assuming
-	 * that the one update of the class' constructor handles the state of the data.
+	 * This echoes and input element with name and id, and any extra description information.
+     * All of the form_cb_html_* functions are called to build the settings page.
+     * Which page and which sections they will display in was defined where the
+     * callback names were defined.
 	 */
-	public function form_html_answer_input() {
+	public function form_cb_html_answer_input() {
 
 		$key = self::WPO_KEY_ANSWER;
 		// params are: id, name, value
@@ -466,7 +436,7 @@ class Yfp_Login_Customizer
 		echo '<br />This is the text that the user must enter to login. It must be alpha-numeric and be less than 20 characters. It will be displayd as part of the login screen.';
 	}
 
-	public function form_html_quote_answer() {
+	public function form_cb_html_quote_answer() {
 		$tplChk = '<input id="%s" name="%s" type="checkbox" value="1" %s />';
 		printf($tplChk,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_QUOTE_ANSWER),
@@ -476,7 +446,7 @@ class Yfp_Login_Customizer
 		echo '<br />Wrap the Answer in quotes when it is shown on the login screen.';
 	}
 
-	public function form_html_before_input($opt=array()) {
+	public function form_cb_html_before_input($opt=array()) {
 		// params are: id, name, value
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
@@ -486,7 +456,7 @@ class Yfp_Login_Customizer
 		echo '<br />This text will be displayed immediately before "the answer".';
 		htmlspecialchars( print_r($opt) );
 	}
-	public function form_html_after_input() {
+	public function form_cb_html_after_input() {
 		// params are: id, name, value
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
@@ -496,39 +466,53 @@ class Yfp_Login_Customizer
 		echo '<br />This text will be displayed immediately after "the answer".';
 	}
 
+    protected function initializePluginSettings() {
+        $fqFile = __FILE__;
+        $this->plugin_basename = plugin_basename($fqFile);
+        $this->plugin_path = dirname($fqFile);
+        $this->plugin_url_dir = plugins_url('', $fqFile);
+        // Needed by the parent class to create a link.
+        $this->plugin_menu_slug = self::ADMIN_MENU_SLUG;
+        $this->pluginSettingsGroup = $this->keySanitize($this->plugin_basename) . '_settings_group';
 
-	/**
-	* Add the hooks that make this run.
-	*/
-	function __construct($useAdmin=true) {
+        // Determine what goes in oImageObjList.
+        $this->initializeSavedSettings();
+    }
 
-		$this->use_admin = !!$useAdmin;
-		$this->update_config_properties();
-		add_action('login_form', array($this, 'echo_field_to_form', ));
-		add_filter('wp_authenticate_user', array($this, 'form_authenticate'), 10, 3);
-		$this->init_admin();
-	}
+
+    /**
+    * Add the hooks that make this run.
+    */
+    protected function init() {
+        // Provides info to parent class, so do it early.
+        $this->initializePluginSettings();
+        add_action('login_form', array($this, 'echo_field_to_form', ));
+        add_filter('wp_authenticate_user', array($this, 'form_authenticate'), 10, 3);
+        $this->initAdmin();
+        parent::__construct();
+    }
+
+
+    /**
+    * The trend seems to be to make a singleton so the object can be
+    * accessed once it is built.
+    * So we'll try that.
+    */
+    protected function __construct(){}
+    public static function instance(){
+        if (!isset(self::$instance)) {
+            self::$instance = new self;
+            self::$instance->init();
+        }
+        return self::$instance;
+    }
 }
-// Launch the plugin.
-new Yfp_Login_Customizer();
 
 
-
-
-////////////////////////////////////////////////////////
-// Everything else it to handle an admin screen
-////////////////////////////////////////////////////////
-
-/**
-* Not used, but a way to detect if a plugin is active.
-*/
-/*
-function sswd_is_plugin_active($plugin_var) {
-	$res = in_array(
-		$plugin_var. '/' .$plugin_var. '.php',
-		apply_filters( 'active_plugins', get_option( 'active_plugins' ) )
-	);
-	return $res;
+//new Yfp_Login_Customizer();
+// No point in creating the slideshow just to uninstall it.
+if (!defined('WP_UNINSTALL_PLUGIN')) {
+    // Launch the plugin.
+    Yfp_Login_Customizer::instance();
 }
-*/
 
