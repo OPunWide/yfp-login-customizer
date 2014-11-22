@@ -1,10 +1,29 @@
 <?php
 /*
 Plugin Name: YFP Login Form Customizer
+Plugin URI: https://github.com/OPunWide/yfp-login-customizer
 Description: Adds a box to the WordPress login form that must be properly filled in as part of the login process. The correct text to enter is displayed above the box, so humans can easily login, while robots are unlikely to know what to do.
-Version: 1.0
+Version: 1.0.1
 Author: Paul Blakelock, Splendid Spider Web Design.
+Author URI: http://SplendidSpider.com
+License: GPL2
 */
+/*  Copyright 2014  Paul Blakelock  (email : web@SplendidSpider.com)
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License, version 2, as
+    published by the Free Software Foundation.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 
 /**
 * A simple concept: robots won't know how to put data in the extra field. Humans
@@ -14,13 +33,7 @@ Author: Paul Blakelock, Splendid Spider Web Design.
 * what is needed is all transmitted when the form is submitted. No installation
 * is needed, just copy this file into plugin area like any other plugin.
 *
-* To use this without the admin interface
-* comment out the loader in the is_admin() conditional before installing the plugin:
-* // new YfpLoginAddition
-*
-* That will
-*
-* Cannot use namespaces yet because at this time WP supports PHP version 5.2.4 or greater.
+* :-( Cannot use namespaces yet because at this time WP still supports PHP version 5.2.4 or greater.
 */
 
 if ( ! class_exists( 'Yfp_Plugin_Base' ) ) {
@@ -143,17 +156,27 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 	}
 
 
+    /**
+    * The unescaped html that will displayed above the login field. It
+    * is also displayed on the settings page.
+    *
+    */
+    protected function html_above_login_field() {
+        $ans = $this->quote_answer ? '"' . $this->correct_answer . '"' : $this->correct_answer;
+        $labelText = sprintf('%s %s %s', $this->label_before, $ans, $this->label_after);
+        return $labelText;
+    }
+
 	/**
 	* Echoes the added field to the login form.
 	*/
-	function echo_field_to_form(){
-		$ans = $this->quote_answer ? '"' . $this->correct_answer . '"' : $this->correct_answer;
-		$labelText = sprintf('%s %s %s', $this->label_before, $ans, $this->label_after);
+	public function cb_echo_to_login_form(){
+        $labelText = $this->html_above_login_field();
 ?>
     <p>
-		<label for="<?php echo self::KEY_USER_RESPONSE; ?>"><?php echo $labelText; ?><br>
-		<input type="text" size="20" value="" class="input" id="<?php echo self::KEY_USER_RESPONSE; ?>" name="<?php echo self::KEY_USER_RESPONSE; ?>"></label>
-		<input type="hidden" name="<?php echo self::KEY_CORRECT_ANSWER; ?>" value="<?php echo $this->correct_answer; ?>" />
+		<label for="<?php esc_attr_e(self::KEY_USER_RESPONSE); ?>"><?php esc_html_e($labelText); ?><br>
+		<input type="text" size="20" value="" class="input" id="<?php esc_attr_e(self::KEY_USER_RESPONSE); ?>" name="<?php esc_attr_e(self::KEY_USER_RESPONSE); ?>"></label>
+		<input type="hidden" name="<?php esc_attr_e(self::KEY_CORRECT_ANSWER); ?>" value="<?php esc_attr_e($this->correct_answer); ?>" />
 	</p>
 
 <?php
@@ -222,6 +245,10 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			<p>The defaults will work for most people, but any of the values can be
 			changed to different strings. Before and After text will be used in
 			the form's label around "the answer".</p>
+
+            <p>With the current settings, the text on the login page looks like this:</p>
+            <div style="display: inline-block; padding: 1em; background: rgba(255,255,255,.5); border: 1px solid #aaa;"
+                ><?php esc_html_e($this->html_above_login_field()); ?></div>
 
 			<form method="post" action="options.php">
 			<?php
@@ -311,7 +338,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 				$new_input[$check_key] = $val;
 				// Only update the message if the value has changed.
                 if ($this->isValueDifferent($check_key, $current_options, $new_input[$check_key])) {
-					$message .= __('The response required for the correct answer was updated. ');
+					$message .= __('The "correct answer" response was updated. ');
 				}
 			}
 			else {
@@ -367,7 +394,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 			}
 			else {
 				$type = 'error';
-				$message .= __('The "zfter" field must be 100 or fewer characters. ');
+				$message .= __('The "after" field must be 100 or fewer characters. ');
 				// This was initialized to a default if the value was not otherwise set.
 				$new_input[$check_key] = $this->label_after;
 			}
@@ -380,7 +407,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		if ('' !== $message) {
 
 			add_settings_error(
-				'unusedUniqueIdentifyer',
+				'unusedUniqueIdentifyer42',
 				esc_attr( 'settings_updated' ),
 				$message,
 				$type
@@ -438,9 +465,9 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_ANSWER),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_ANSWER),
-			htmlspecialchars($this->correct_answer, ENT_HTML5)
+			esc_html__($this->correct_answer, ENT_HTML5)
 		);
-		echo '<br />This is the text that the user must enter to login. It must be alpha-numeric and be less than 20 characters. It will be displayd as part of the login screen.';
+		echo '<br />This is the text that the user must enter to login. It must be alpha-numeric and be less than 20 characters. It will be displayed as part of the login screen.';
 	}
 
 	public function form_cb_html_quote_answer() {
@@ -459,7 +486,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_BEFORE),
-			htmlspecialchars($this->label_before)
+			esc_html__($this->label_before)
 		);
 		echo '<br />Optional. This text will be displayed immediately before "the answer".';
 		//htmlspecialchars( print_r($opt) );
@@ -470,10 +497,11 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
 		printf(self::TPL_INPUT_ELEM,
 			$this->form_input_id_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
 			$this->form_input_name_in_array(self::WP_OPTIONS_KEY_NAME, self::WPO_KEY_LBL_AFTER),
-            htmlspecialchars($this->label_after)
+            esc_html__($this->label_after)
 		);
 		echo '<br />Optional. This text will be displayed immediately after "the answer".';
 	}
+
 
     protected function initializePluginSettings() {
         $fqFile = __FILE__;
@@ -482,9 +510,8 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
         $this->plugin_url_dir = plugins_url('', $fqFile);
         // Needed by the parent class to create a link.
         $this->plugin_menu_slug = self::ADMIN_MENU_SLUG;
+        // Used on input forms for this plugin.
         $this->pluginSettingsGroup = $this->keySanitize($this->plugin_basename) . '_settings_group';
-
-        // Determine what goes in oImageObjList.
         $this->initializeSavedSettings();
     }
 
@@ -495,7 +522,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
     protected function init() {
         // Provides info to parent class, so do it early.
         $this->initializePluginSettings();
-        add_action('login_form', array($this, 'echo_field_to_form', ));
+        add_action('login_form', array($this, 'cb_echo_to_login_form', ));
         add_filter('wp_authenticate_user', array($this, 'form_authenticate'), 10, 3);
         $this->initAdmin();
         parent::__construct();
