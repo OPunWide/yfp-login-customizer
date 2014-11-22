@@ -6,6 +6,19 @@
 * To empahsize that there is only one add_settings_section() call per
 * settings sections, it is part of the constructor.
 *
+* Additional tests are included to help catch errors early. They can be disabled
+* on any instance by using the methods:
+*
+* $obj->callback_prefix(false);
+* $obj->disable_callback_verification(true);
+*
+* Callback Verification makes sure that the function of method defined exists.
+* Callback prefix checking is usefull if you want all of the form callback
+* method or function names to start with the same text.
+*
+*
+* Why...
+*
 * The function add_settings_section is more of an organizational tool than anything
 * else. It does not have to display any html, but provides information about how to
 * display the various add_settings_field calls that are made in the admin section.
@@ -13,9 +26,46 @@
 class Yfp_Plugin_Settings_Section
 {
     const FIELD_ID_PREFIX = 'autoid';
+    const CALLBACK_PREFIX = 'form_cb_';
     protected $uid;
     protected $page;
+    // Incremented to create a unique id within the section.
     protected $fieldId = 0;
+    protected $namePrefix;
+    protected $verifyOn = true;
+
+    /**
+    * There are developer warnings. Once the plug in working these should never
+    * be able to happen.
+    *
+    * The reason for adding the checks is that unless a function is called, its
+    * errors will never be reported. Using this does a check check on the
+    * methods even if they are not being called during executiono of that page.
+    * For example, if setting are put on more than one page.
+    *
+    * @param mixed $cb
+    */
+    protected function verify_callback($cb) {
+        $methodName = '';
+        if (is_string($cb)) {$methodName = $cb;}
+        // Okay to cause an error, because that's what will happen if it isn't valid.
+        else if (is_array($cb)) {$methodName = $cb[1];}
+
+        if ($this->namePrefix) {
+            $loc = strpos($methodName, $this->namePrefix);
+            if (0 !== $loc) {
+                trigger_error('Settings callback prefix is not following standards, was ' . $methodName, E_USER_WARNING);
+            }
+        }
+        if ($this->verifyOn) {
+            if (is_string($cb)) {
+                assert(function_exists($methodName));
+            }
+            else if (is_array($cb)) {
+                assert(method_exists($cb[0], $methodName));
+            }
+        }
+    }
 
     /**
     * To empahsize that there is only one add_settings_section() call per
@@ -31,6 +81,7 @@ class Yfp_Plugin_Settings_Section
     public function __construct($uid, $page_slug, $title, $html_callback) {
         $this->uid = $uid;
         $this->page = $page_slug;
+        $this->namePrefix = self::CALLBACK_PREFIX;
 
         add_settings_section($this->uid, $title, $html_callback, //array( $this, 'section_1_html' )
             $this->page // Options page slug, the page where this section will be displayed.
@@ -57,6 +108,33 @@ class Yfp_Plugin_Settings_Section
         $this->add_field_with_id($rid, $label, $html_callback, $args);
     }
     public function add_field_with_id($id, $label, $html_callback, $args = array()) {
+        $this->verify_callback($html_callback);
         add_settings_field($id, $label, $html_callback, $this->page, $this->uid, $args);
+    }
+
+    /**
+    * A lot of a plugin's functions are callbacks, most are for field output.
+    * By using a consistant naming convention it is easer to find (or ignore)
+    * all of those functions/methods.
+    * Enabling name warnings causes warnings to be given if a callback does not
+    * follow the convention.
+    *
+    * @param string $str - Any string is valid.
+    *       An empty string or bool false turns it off
+    *       bool true sets it to the default.
+    */
+    public function callback_prefix($str) {
+        // Any string is valid. An empty string or bool false turns it off
+        if (is_string($str) || false === $str) {
+            $this->namePrefix = $str;
+        }
+        else if (true === $str) {
+            $this->namePrefix = self::CALLBACK_PREFIX;
+        }
+    }
+
+    public function disable_callback_verification($yes) {
+        // This will turn off the check that a method or function exists.
+        $this->verifyOn = !$yes;
     }
 }

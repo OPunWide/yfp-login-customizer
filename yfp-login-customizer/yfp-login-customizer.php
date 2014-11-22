@@ -274,6 +274,7 @@ class Yfp_Login_Customizer extends Yfp_Plugin_Base
         $ss1->add_field('After the answer', array( $this, 'form_cb_html_after_input' ));
     }
 
+
 	/**
 	 * Register and add settings.
 	 */
